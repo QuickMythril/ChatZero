@@ -1,25 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Qortal Chat Application</title>
+    <title>ChatZero v0.0.0</title>
     <style>
-        /* CSS styles here */
+        /* Simplified CSS styles */
         body {
             margin: 0;
             font-family: Arial, sans-serif;
         }
 
+        div {
+            padding-top: 5px;
+        }
+
         #container {
             display: flex;
             height: 100vh;
-        }
-
-        #sidebar-left, #sidebar-right {
-            width: 200px;
-            min-width: 150px;
-            background-color: #f1f1f1;
-            overflow-y: auto;
-            padding: 10px;
         }
 
         #main {
@@ -28,7 +24,6 @@
             flex-direction: column;
         }
 
-        /* Add styles for the group description banner */
         #group-description-banner {
             padding: 10px;
             background-color: #e1e1e1;
@@ -60,44 +55,34 @@
             right: 10px;
         }
 
-        .group-item, .user-item {
+        #sidebar-right {
+            width: 600px;
+            min-width: 150px;
+            background-color: #f1f1f1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .user-item {
             padding: 5px;
             cursor: pointer;
             list-style: none;
         }
 
-        .group-item:hover, .user-item:hover {
+        .user-item:hover {
             background-color: #ccc;
         }
 
         .active {
             background-color: #bbb;
         }
-
-        /* Styles for nested lists */
-        .nested-list {
-            list-style: none;
-            padding-left: 15px;
-        }
-
-        .nested-list .group-item {
-            padding-left: 10px;
-        }
     </style>
 </head>
 <body>
     <button id="login-button">Login</button>
     <div id="container">
-        <div id="sidebar-left">
-            <h3>Groups</h3>
-            <ul id="group-list">
-                <!-- Groups will be populated here -->
-            </ul>
-        </div>
         <div id="main">
-            <!-- Add the group description banner here -->
-            <div id="group-description-banner"></div>
-
+            <div id="group-description-banner">Qortal General Chat (ChatZero v0.0.0)</div>
             <div id="chat-messages">
                 <!-- Chat messages will be displayed here -->
             </div>
@@ -107,7 +92,7 @@
             </div>
         </div>
         <div id="sidebar-right">
-            <h3>Users</h3>
+            <h3>Recently Posted</h3>
             <ul id="user-list">
                 <!-- Users will be populated here -->
             </ul>
