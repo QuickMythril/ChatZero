@@ -1,21 +1,95 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ChatZero v0.0.1</title>
+    <title>ChatZero v0.1.0</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <style>
         /* Simplified CSS styles */
+        @font-face {
+            font-family: 'Lexend';
+            src: url('Lexend-Regular.ttf');
+        }
+
         body {
             margin: 0;
-            font-family: Arial, sans-serif;
+            font-family: 'Lexend', sans-serif;
+            background-color: #0A0F25; /* Dark navy blue background */
+            color: #FFFFFF; /* White text */
         }
 
         div {
             padding-top: 5px;
         }
 
+        h3 {
+            color: #FFFFFF;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        #chat-messages {
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #0A0F25; /* Match body background */
+            color: #FFFFFF;
+        }
+
+        #chat-input {
+            padding: 10px;
+            background-color: #1A1F36; /* Darker background */
+        }
+
+        #chat-input input {
+            width: 100%;
+            height: 40px;
+            background-color: #1A1F36; /* Darker background */
+            color: #FFFFFF;
+            border: none;
+            padding: 5px;
+            font-family: 'Lexend', sans-serif;
+        }
+
         #container {
             display: flex;
             height: 100vh;
+        }
+
+        #group-description-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: #1A1F36;
+            font-weight: bold;
+            min-height: 50px;
+            color: #FFFFFF;
+        }
+
+        #group-description-banner button {
+            background-color: #3A75C4;
+            color: #FFFFFF;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: 'Lexend', sans-serif;
+            margin-left: 10px;
+        }
+
+        #group-description-banner button:hover {
+            background-color: #336699;
+        }
+
+        #login-button {
+            background-color: #3A75C4; /* Muted blue */
+            color: #FFFFFF;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        #login-button:hover {
+            background-color: #336699; /* Slightly darker muted blue */
         }
 
         #main {
@@ -24,70 +98,120 @@
             flex-direction: column;
         }
 
-        #group-description-banner {
+        #send-button {
+            background-color: #3A75C4; /* Muted blue */
+            color: #FFFFFF;
+            border: none;
             padding: 10px;
-            background-color: #e1e1e1;
-            text-align: center;
-            font-weight: bold;
-            min-height: 50px;
+            cursor: pointer;
+            margin-top: 5px;
+            font-family: 'Lexend', sans-serif;
         }
 
-        #chat-messages {
-            flex-grow: 1;
-            padding: 10px;
-            overflow-y: auto;
-            background-color: #ffffff;
-        }
-
-        #chat-input {
-            padding: 10px;
-            background-color: #ddd;
-        }
-
-        #chat-input textarea {
-            width: 100%;
-            height: 50px;
-        }
-
-        #login-button {
-            position: absolute;
-            top: 10px;
-            right: 10px;
+        #send-button:hover {
+            background-color: #336699; /* Slightly darker muted blue */
         }
 
         #sidebar-right {
-            width: 600px;
-            min-width: 150px;
-            background-color: #f1f1f1;
+            display: none; /* Hidden by default */
+            width: 350px;
+            min-width: 250px;
+            background-color: #0A0F25;
             overflow-y: auto;
             padding: 10px;
+            color: #FFFFFF;
         }
 
-        .user-item {
-            padding: 5px;
-            cursor: pointer;
-            list-style: none;
-        }
-
-        .user-item:hover {
-            background-color: #ccc;
+        #top-bar-buttons {
+            display: flex;
+            align-items: center;
         }
 
         .active {
-            background-color: #bbb;
+            background-color: #3A75C4; /* Muted blue */
+        }
+
+        .highlighted-message {
+            background-color: #5B9BD5; /* Brighter blue */
+        }
+
+        .highlighted-user {
+            background-color: #5B9BD5; /* Same brighter blue */
+        }
+
+        .message-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .message-item img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        .message-content {
+            max-width: 100%;
+            word-wrap: break-word;
+            font-family: 'Lexend', sans-serif;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            padding: 5px;
+            cursor: pointer;
+            list-style: none;
+            color: #FFFFFF;
+        }
+
+        .user-item:hover {
+            background-color: #1A1F36; /* Darker background */
+        }
+
+        .user-item img {
+            width: 30px;
+            height:30px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        @media screen and (max-width: 600px) {
+            #container {
+                flex-direction: column;
+            }
+            #sidebar-right {
+                position: absolute;
+                top: 0;
+                right: 0;
+                width: 80%;
+                height: 100vh;
+                z-index: 1000;
+                background-color: #0A0F25;
+            }
+            #sidebar-right.show {
+                display: block;
+            }
         }
     </style>
 </head>
 <body>
-    <button id="login-button">Login</button>
     <div id="container">
         <div id="main">
-            <div id="group-description-banner">Qortal General Chat (ChatZero v0.0.1)</div>
+            <div id="group-description-banner">
+                <span>Qortal General Chat (ChatZero v0.1.0)</span>
+                <div id="top-bar-buttons">
+                    <button id="toggle-user-list-button">Users</button>
+                    <button id="login-button">Login</button>
+                </div>
+            </div>            
             <div id="chat-messages">
                 <!-- Chat messages will be displayed here -->
             </div>
             <div id="chat-input">
-                <textarea id="message-input" placeholder="Type your message here..."></textarea>
+                <input type="text" id="message-input" placeholder="Type your message here...">
                 <button id="send-button">Send</button>
             </div>
         </div>

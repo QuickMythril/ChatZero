@@ -8,13 +8,34 @@ let userPublicKey = null;
 let userName = null;
 let groupMessages = [];
 let isLoggedIn = false;
-// Cache for address-to-name mapping
+// Cache for address & avatar mapping
 let addressNameMap = {};
+let avatarCache = {};
 
 // Initialize the application
 async function init() {
     document.getElementById('login-button').addEventListener('click', login);
     document.getElementById('send-button').addEventListener('click', sendMessage);
+    document.getElementById('message-input').addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault(); // Prevents adding a newline
+            sendMessage();
+        }
+    });
+    document.getElementById('toggle-user-list-button').addEventListener('click', function() {
+        const sidebar = document.getElementById('sidebar-right');
+        if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+            sidebar.style.display = 'block';
+        } else {
+            sidebar.style.display = 'none';
+        }
+        // Mobile compatibility
+        if (sidebar.classList.contains('show')) {
+            sidebar.classList.remove('show');
+        } else {
+            sidebar.classList.add('show');
+        }
+    });
     // Load messages and users
     await loadMessagesAndUsers();
     // Periodically refresh messages and users
@@ -120,31 +141,40 @@ async function loadMessagesAndUsers() {
         const activeUsers = new Set();
         processedMessages = 0;
         for (let msg of messagesToDisplay) {
-            processedMessages++;
-            // Display logging message: Message processing progress
-            displayLogMessage(`Displaying message ${processedMessages} of ${messagesToDisplay.length}...`);
             const messageElement = document.createElement('div');
+            messageElement.classList.add('message-item');
             const senderName = await getNameForAddress(msg.sender);
-            // Collect active users
+            // Add sender to active users
             activeUsers.add(msg.sender);
-            // Decode the message data
-            let messageContent = '';
+            // Highlight messages from the logged-in user
+            if (isLoggedIn && msg.sender === userAddress) {
+                messageElement.classList.add('highlighted-message');
+            }
+            // Create avatar image
+            const avatarImg = document.createElement('img');
+            const name = addressNameMap[msg.sender] || msg.sender;
+            avatarImg.src = avatarCache[name] || 'default-avatar.png';
+            // Create message content
+            const messageContent = document.createElement('div');
+            messageContent.classList.add('message-content');
+            let messageText = '';
             if (msg.isEncrypted) {
-                messageContent = '[Encrypted Message]';
+                messageText = '[Encrypted Message]';
             } else {
                 try {
                     const decodedBytes = base58Decode(msg.data);
                     const jsonString = new TextDecoder().decode(decodedBytes);
                     const messageObject = JSON.parse(jsonString);
-                    messageContent = extractTextFromMessage(messageObject.messageText);
+                    messageText = extractTextFromMessage(messageObject.messageText);
                 } catch (e) {
-                    messageContent = '[Unable to decode message]';
+                    messageText = '[Unable to decode message]';
                 }
             }
-            // Format the timestamp
             const formattedTimestamp = formatTimestamp(msg.timestamp);
-            // Include timestamp in the displayed message
-            messageElement.innerHTML = `${formattedTimestamp} ${senderName}: ${messageContent}`;
+            messageContent.innerHTML = `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formattedTimestamp}</span><br>${messageText}`;
+            // Append avatar and content to message element
+            messageElement.appendChild(avatarImg);
+            messageElement.appendChild(messageContent);
             chatMessages.appendChild(messageElement);
         }
         // Scroll to the bottom
@@ -158,13 +188,19 @@ async function loadMessagesAndUsers() {
         // Counter for processed users
         let processedUsers = 0;
         for (let user of activeUsers) {
-            processedUsers++;
-            // Display logging message: User processing progress
-            displayUserLogMessage(`Processing user ${processedUsers} of ${activeUsers.size}...`);
             const userItem = document.createElement('li');
-            const name = await getNameForAddress(user);
-            userItem.textContent = name;
             userItem.classList.add('user-item');
+            // Highlight the logged-in user
+            if (isLoggedIn && user === userAddress) {
+                userItem.classList.add('highlighted-user');
+            }
+            const avatarImg = document.createElement('img');
+            const userName = await getNameForAddress(user);
+            avatarImg.src = avatarCache[userName] || 'default-avatar.png';
+            const userNameSpan = document.createElement('span');
+            userNameSpan.textContent = userName;
+            userItem.appendChild(avatarImg);
+            userItem.appendChild(userNameSpan);
             userList.appendChild(userItem);
         }
         // Final logging messages
@@ -209,9 +245,6 @@ async function login() {
         userPublicKey = null;
         userName = null;
         isLoggedIn = false;
-        // Disable send button and message input
-        document.getElementById('send-button').disabled = true;
-        document.getElementById('message-input').disabled = true;
         // Update login button text
         document.getElementById('login-button').textContent = 'Login';
         displayLogMessage('Logged out.');
@@ -227,9 +260,6 @@ async function login() {
             isLoggedIn = true;
             // Get user name
             userName = await getNameForAddress(userAddress);
-            // Enable send button and message input
-            document.getElementById('send-button').disabled = false;
-            document.getElementById('message-input').disabled = false;
             // Update login button text
             document.getElementById('login-button').textContent = 'Logout';
             // Display logging message: Login successful
@@ -254,69 +284,94 @@ async function getNameForAddress(address) {
             if (names && names.length > 0) {
                 const name = names[0].name;
                 addressNameMap[address] = name;
+                // Fetch avatar
+                fetchAvatarForName(name);
                 return name;
             } else {
-                addressNameMap[address] = address;
-                return address;
+                const truncatedAddress = address.substring(0, 5) + '...' + address.substring(address.length - 5);
+                addressNameMap[address] = truncatedAddress;
+                return truncatedAddress;
             }
         } catch (error) {
             console.error('Error fetching name for address:', error);
-            addressNameMap[address] = address;
-            return address;
+            const truncatedAddress = address.substring(0, 5) + '...' + address.substring(address.length - 5);
+            addressNameMap[address] = truncatedAddress;
+            return truncatedAddress;
         }
     }
 }
 
+function fetchAvatarForName(name) {
+    if (avatarCache[name]) return; // Avatar already cached
+    const avatarUrl = `/arbitrary/THUMBNAIL/${name}/qortal_avatar`;
+    const img = new Image();
+    img.src = avatarUrl;
+    img.onload = function() {
+        avatarCache[name] = avatarUrl;
+    };
+    img.onerror = function() {
+        // Use a default avatar or do nothing
+        avatarCache[name] = 'default-avatar.png'; // Ensure you have a default avatar image
+    };
+}
+
 // Send a message to groupId 0
 function sendMessage() {
-    if (!isLoggedIn) {
-        alert('You must be logged in to send messages.');
-        return;
-    }
     const messageInput = document.getElementById('message-input');
     const message = messageInput.value.trim();
     if (message === '') return;
+    // Disable the send button and message input
+    document.getElementById('send-button').disabled = true;
+    messageInput.disabled = true;
+    // Dim the input area
+    document.getElementById('chat-input').style.opacity = '0.5';
+    // Show a note saying "Sending..."
+    let sendingNote = document.getElementById('sending-note');
+    if (!sendingNote) {
+        sendingNote = document.createElement('div');
+        sendingNote.id = 'sending-note';
+        sendingNote.textContent = 'Sending...';
+        sendingNote.style.color = 'gray';
+        sendingNote.style.fontStyle = 'italic';
+        document.getElementById('chat-input').appendChild(sendingNote);
+    }
     // Display logging message: Sending message
     displayLogMessage('Sending message...');
-    // Create the message object in the required format
-    const messageObject = {
-        messageText: {
-            type: 'doc',
-            content: [
-                {
-                    type: 'paragraph',
-                    content: [
-                        {
-                            type: 'text',
-                            text: message
-                        }
-                    ]
-                }
-            ]
-        },
-        images: [""],
-        repliedTo: "",
-        version: 3
-    };
-    // Convert the message object to JSON string
-    const jsonString = JSON.stringify(messageObject);
-    const uint8Array = new TextEncoder().encode(jsonString);
-    const base58Encoded = base58Encode(uint8Array);
     // Send group message to groupId 0
     qortalRequest({
         action: "SEND_CHAT_MESSAGE",
-        groupId: 0, // send to groupId 0
-        message: base58Encoded
-    }).then(() => {
-        // Clear the input field upon successful send
-        messageInput.value = '';
-        // Display logging message: Message sent
-        displayLogMessage('Message sent successfully.');
-        // Reload messages and users
-        loadMessagesAndUsers();
+        groupId: "0", // send to groupId 0
+        message: message
+    }).then(response => {
+        // Check if response is true
+        if (response === true) {
+            // Clear the input field upon successful send
+            messageInput.value = '';
+            // Display logging message: Message sent
+            displayLogMessage('Message sent successfully.');
+            // Reload messages and users
+            loadMessagesAndUsers();
+        } else {
+            // Handle unexpected response
+            console.error('Unexpected response from SEND_CHAT_MESSAGE:', response);
+            displayLogMessage(`Error sending message: Unexpected response from server.`);
+            alert('Error sending message: Unexpected response from server.');
+        }
     }).catch(error => {
         console.error('Error sending message:', error);
         displayLogMessage(`Error sending message: ${error}`);
+        alert('Error sending message. Please try again.');
+    }).finally(() => {
+        // Re-enable the send button and message input
+        document.getElementById('send-button').disabled = false;
+        messageInput.disabled = false;
+        // Restore the opacity
+        document.getElementById('chat-input').style.opacity = '1';
+        // Remove the "Sending..." note
+        let sendingNote = document.getElementById('sending-note');
+        if (sendingNote) {
+            sendingNote.remove();
+        }
     });
 }
 
