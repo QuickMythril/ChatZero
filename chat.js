@@ -8,6 +8,7 @@ let userPublicKey = null;
 let userName = null;
 let groupMessages = [];
 let isLoggedIn = false;
+let refreshIntervalId = null;
 // Cache for address & avatar mapping
 let addressNameMap = {};
 let avatarCache = {};
@@ -39,7 +40,7 @@ async function init() {
     // Load messages and users
     await loadMessagesAndUsers();
     // Periodically refresh messages and users
-    setInterval(loadMessagesAndUsers, 15000); // Refresh every 15 seconds
+    refreshIntervalId = setInterval(loadMessagesAndUsers, 15000); // Refresh every 15 seconds
 }
 
 // Base58 encoding and decoding functions
@@ -165,7 +166,17 @@ async function loadMessagesAndUsers() {
                     const decodedBytes = base58Decode(msg.data);
                     const jsonString = new TextDecoder().decode(decodedBytes);
                     const messageObject = JSON.parse(jsonString);
+                    // Extract text from messageText
                     messageText = extractTextFromMessage(messageObject.messageText);
+                    // Handle embedded images
+                    if (messageObject.images && Array.isArray(messageObject.images) && (messageObject.images[0] !== "")) {
+                        for (let image of messageObject.images) {
+                            const imageUrl = `/arbitrary/${image.service}/${image.name}/${image.identifier}`;
+                            messageText += `<br><img src="${imageUrl}" alt="Embedded Image">`;
+                        }
+                    }
+                    // Process qortal:// links within the message text
+                    messageText = processQortalLinks(messageText);
                 } catch (e) {
                     messageText = '[Unable to decode message]';
                 }
@@ -320,6 +331,8 @@ function sendMessage() {
     const messageInput = document.getElementById('message-input');
     const message = messageInput.value.trim();
     if (message === '') return;
+    // Stop the periodic refresh
+    clearInterval(refreshIntervalId);
     // Disable the send button and message input
     document.getElementById('send-button').disabled = true;
     messageInput.disabled = true;
@@ -343,18 +356,21 @@ function sendMessage() {
         groupId: "0", // send to groupId 0
         message: message
     }).then(response => {
-        // Check if response is true
-        if (response === true) {
+        // If the response is not an error, treat it as success
+        if (response && !response.error) {
             // Clear the input field upon successful send
             messageInput.value = '';
             // Display logging message: Message sent
             displayLogMessage('Message sent successfully.');
+            // Log the response for further investigation
+            console.log('Response from SEND_CHAT_MESSAGE:', response);
+            displayLogMessage(`Response: ${JSON.stringify(response)}`);
             // Reload messages and users
             loadMessagesAndUsers();
         } else {
             // Handle unexpected response
             console.error('Unexpected response from SEND_CHAT_MESSAGE:', response);
-            displayLogMessage(`Error sending message: Unexpected response from server.`);
+            displayLogMessage(`Unexpected response: ${JSON.stringify(response)}`);
             alert('Error sending message: Unexpected response from server.');
         }
     }).catch(error => {
@@ -372,6 +388,8 @@ function sendMessage() {
         if (sendingNote) {
             sendingNote.remove();
         }
+        // Restart the periodic refresh
+        refreshIntervalId = setInterval(loadMessagesAndUsers, 15000);
     });
 }
 
@@ -392,6 +410,8 @@ function extractTextFromMessage(node) {
                     // Add more formatting as needed
                 }
             }
+            // Process qortal:// links in the text
+            text = processQortalLinks(text);
             resultText += text;
         } else if (node.type === 'paragraph') {
             if (node.content && Array.isArray(node.content)) {
@@ -427,6 +447,97 @@ function extractTextFromMessage(node) {
     }
     traverse(node);
     return resultText;
+}
+
+function processQortalLinks(text) {
+    // Use a regular expression to find qortal:// links
+    return text.replace(/qortal:\/\/[^\s<>"']+/g, function(match) {
+        const displayText = escapeHtml(match);
+        const encodedLink = encodeURIComponent(match);
+        // Extract the service, name, and identifier
+        const path = match.substring('qortal://'.length);
+        const parts = path.split('/');
+        const service = parts[0];
+        const name = parts[1];
+        const identifier = parts.slice(2).join('/'); // In case identifier contains slashes
+        // Handle 'use-group/action-join/groupid-XXX' links
+        if (service === 'use-group' && name === 'action-join') {
+            return `<a href="#" style="color: dodgerblue; text-decoration: underline;" onclick="joinGroup('${encodedLink}'); return false;">${displayText}</a>`;
+        }
+        // For APP and WEBSITE service types
+        else if (service === 'APP' || service === 'WEBSITE') {
+            return `<a href="#" style="color: dodgerblue; text-decoration: underline;" onclick="openQortalLink('${encodedLink}'); return false;">${displayText}</a>`;
+        }
+        // For embeddable service types
+        else if (['THUMBNAIL', 'QCHAT_IMAGE', 'IMAGE', 'VIDEO', 'AUDIO', 'QCHAT_AUDIO', 'VOICE', 'BLOG', 'BLOG_POST', 'BLOG_COMMENT', 'DOCUMENT'].includes(service)) {
+            const url = `/arbitrary/${service}/${name}/${identifier}`;
+            // Decide how to embed based on service type
+            if (['IMAGE', 'THUMBNAIL', 'QCHAT_IMAGE'].includes(service)) {
+                return `<img src="${url}" alt="${displayText}">`;
+            } else if (['VIDEO'].includes(service)) {
+                return `<video controls src="${url}"></video>`;
+            } else if (['AUDIO', 'QCHAT_AUDIO', 'VOICE'].includes(service)) {
+                return `<audio controls src="${url}"></audio>`;
+            } else {
+                return `<a href="#" onclick="openQortalLink('${encodedLink}'); return false;">${displayText}</a>`;
+            }
+        } else {
+            // Default action for other service types
+            return `<a href="#" style="color: dodgerblue; text-decoration: underline;" onclick="openQortalLink('${encodedLink}'); return false;">${displayText}</a>`;
+        }
+    });
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function openQortalLink(encodedQortalLink) {
+    const qortalLink = decodeURIComponent(encodedQortalLink);
+    qortalRequest({
+        action: 'OPEN_NEW_TAB',
+        qortalLink: qortalLink
+    }).then(response => {
+        // Optionally handle the response
+    }).catch(error => {
+        console.error('Error opening Qortal link:', error);
+    });
+}
+
+function joinGroup(encodedQortalLink) {
+    const qortalLink = decodeURIComponent(encodedQortalLink);
+    const path = qortalLink.substring('qortal://'.length);
+    const parts = path.split('/');
+    const service = parts[0]; // Should be 'use-group'
+    const action = parts[1];  // Should be 'action-join'
+    const groupIdPart = parts[2]; // Should be 'groupid-XXX'
+    // Extract groupId from 'groupid-XXX'
+    const groupIdMatch = groupIdPart.match(/groupid-(\d+)/);
+    if (groupIdMatch && groupIdMatch[1]) {
+        const groupId = parseInt(groupIdMatch[1], 10);
+        // Call the JOIN_GROUP action
+        qortalRequest({
+            action: "JOIN_GROUP",
+            groupId: groupId
+        }).then(response => {
+            if (response === true || (response && !response.error)) {
+                alert(`Successfully joined group ${groupId}.`);
+            } else {
+                console.error('Error joining group:', response);
+                alert('Error joining group. Please try again.');
+            }
+        }).catch(error => {
+            console.error('Error joining group:', error);
+            alert('Error joining group. Please try again.');
+        });
+    } else {
+        alert('Invalid group link.');
+    }
 }
 
 function formatTimestamp(timestamp) {

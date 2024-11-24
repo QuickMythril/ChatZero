@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ChatZero v0.1.0</title>
+    <title>ChatZero v0.1.1</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <style>
         /* Simplified CSS styles */
@@ -132,11 +132,11 @@
         }
 
         .highlighted-message {
-            background-color: #5B9BD5; /* Brighter blue */
+            background-color: #336699; /* Slightly darker muted blue */
         }
 
         .highlighted-user {
-            background-color: #5B9BD5; /* Same brighter blue */
+            background-color: #336699; /* Slightly darker muted blue */
         }
 
         .message-item {
@@ -148,7 +148,6 @@
         .message-item img {
             width: 40px;
             height: 40px;
-            border-radius: 50%;
             margin-right: 10px;
         }
 
@@ -156,6 +155,19 @@
             max-width: 100%;
             word-wrap: break-word;
             font-family: 'Lexend', sans-serif;
+        }
+
+        .message-content img {
+            max-width: 100%;
+            height: 200px;
+            width: 200px;
+            margin-top: 5px;
+        }
+
+        .message-content video,
+        .message-content audio {
+            max-width: 100%;
+            margin-top: 5px;
         }
 
         .user-item {
@@ -174,7 +186,6 @@
         .user-item img {
             width: 30px;
             height:30px;
-            border-radius: 50%;
             margin-right: 10px;
         }
 
@@ -201,7 +212,7 @@
     <div id="container">
         <div id="main">
             <div id="group-description-banner">
-                <span>Qortal General Chat (ChatZero v0.1.0)</span>
+                <span>Qortal General Chat (ChatZero v0.1.1)</span>
                 <div id="top-bar-buttons">
                     <button id="toggle-user-list-button">Users</button>
                     <button id="login-button">Login</button>
