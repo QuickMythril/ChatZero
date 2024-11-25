@@ -12,6 +12,8 @@ let refreshIntervalId = null;
 // Cache for address & avatar mapping
 let addressNameMap = {};
 let avatarCache = {};
+// To keep track of selected users
+let selectedUsers = new Set();
 
 // Initialize the application
 async function init() {
@@ -106,47 +108,43 @@ async function init() {
 // Combined function to load messages and active users
 async function loadMessagesAndUsers() {
     try {
-        // Display logging message: Starting search
-        displayLogMessage('Starting to search for messages...');
+        const chatMessages = document.getElementById('chat-messages');
+        // Check if the user is at the bottom before updating messages
+        const isAtBottom = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop <= 50;
         // Fetch messages for groupId 0
         const messages = await qortalRequest({
             action: 'SEARCH_CHAT_MESSAGES',
             txGroupId: 0
         });
-        // Display logging message: Number of messages found
-        displayLogMessage(`Found ${messages.length} messages.`);
         groupMessages = messages;
         // Build message map to handle edits
         let messageMap = {};
-        // Counter for processed messages
-        let processedMessages = 0;
         for (let msg of groupMessages) {
-            processedMessages++;
-            // Display logging message: Message processing progress
-            displayLogMessage(`Processing message ${processedMessages} of ${groupMessages.length}...`);
-            // Determine the message ID (original or edited)
             let messageId = msg.chatReference || msg.signature;
             let existingMessage = messageMap[messageId];
-            // Update the message map with the latest message based on timestamp
             if (!existingMessage || msg.timestamp > existingMessage.timestamp) {
                 messageMap[messageId] = msg;
             }
         }
-        // Get the messages to display and sort them by timestamp
-        let messagesToDisplay = Object.values(messageMap);
-        messagesToDisplay.sort((a, b) => a.timestamp - b.timestamp);
+        // Get all messages and sort them by timestamp
+        let allMessages = Object.values(messageMap);
+        allMessages.sort((a, b) => a.timestamp - b.timestamp);
+        // Build set of all active users from all messages (before filtering)
+        let allActiveUsers = new Set();
+        for (let msg of allMessages) {
+            allActiveUsers.add(msg.sender);
+        }
+        // Now filter messagesToDisplay based on selected users
+        let messagesToDisplay = allMessages;
+        if (selectedUsers.size > 0) {
+            messagesToDisplay = messagesToDisplay.filter(msg => selectedUsers.has(msg.sender));
+        }
         // Display messages
-        const chatMessages = document.getElementById('chat-messages');
         chatMessages.innerHTML = '';
-        // Set to collect active users
-        const activeUsers = new Set();
-        processedMessages = 0;
         for (let msg of messagesToDisplay) {
             const messageElement = document.createElement('div');
             messageElement.classList.add('message-item');
             const senderName = await getNameForAddress(msg.sender);
-            // Add sender to active users
-            activeUsers.add(msg.sender);
             // Highlight messages from the logged-in user
             if (isLoggedIn && msg.sender === userAddress) {
                 messageElement.classList.add('highlighted-message');
@@ -181,45 +179,54 @@ async function loadMessagesAndUsers() {
                     messageText = '[Unable to decode message]';
                 }
             }
-            const formattedTimestamp = formatTimestamp(msg.timestamp);
-            messageContent.innerHTML = `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formattedTimestamp}</span><br>${messageText}`;
+            messageContent.innerHTML = `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formatTimestamp(msg.timestamp)}</span><br>${messageText}`;
             // Append avatar and content to message element
             messageElement.appendChild(avatarImg);
             messageElement.appendChild(messageContent);
             chatMessages.appendChild(messageElement);
         }
-        // Scroll to the bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        // Display logging message: Starting user processing
-        displayUserLogMessage(`Found ${activeUsers.size} active users.`);
-        displayUserLogMessage('Starting to process active users...');
-        // Display active users
-        const userList = document.getElementById('user-list');
-        userList.innerHTML = '';
-        // Counter for processed users
-        let processedUsers = 0;
-        for (let user of activeUsers) {
-            const userItem = document.createElement('li');
-            userItem.classList.add('user-item');
-            // Highlight the logged-in user
-            if (isLoggedIn && user === userAddress) {
-                userItem.classList.add('highlighted-user');
-            }
-            const avatarImg = document.createElement('img');
-            const userName = await getNameForAddress(user);
-            avatarImg.src = avatarCache[userName] || 'default-avatar.png';
-            const userNameSpan = document.createElement('span');
-            userNameSpan.textContent = userName;
-            userItem.appendChild(avatarImg);
-            userItem.appendChild(userNameSpan);
-            userList.appendChild(userItem);
+        // Scroll to the bottom if the user was at the bottom
+        if (isAtBottom) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        // Final logging messages
-        displayLogMessage('Finished processing messages.');
-        displayUserLogMessage('Finished processing users.');
+        // Update the user list with all active users
+        updateUserList(allActiveUsers);
     } catch (error) {
         console.error('Error loading messages and users:', error);
         displayLogMessage(`Error loading messages and users: ${error}`);
+    }
+}
+
+function updateUserList(activeUsers) {
+    const userList = document.getElementById('user-list');
+    userList.innerHTML = '';
+    for (let user of activeUsers) {
+        const userItem = document.createElement('li');
+        userItem.classList.add('user-item');
+        const userName = addressNameMap[user] || user;
+        // Highlight selected users
+        if (selectedUsers.has(user)) {
+            userItem.classList.add('selected-user');
+        }
+        const avatarImg = document.createElement('img');
+        avatarImg.src = avatarCache[userName] || 'default-avatar.png';
+        const userNameSpan = document.createElement('span');
+        userNameSpan.textContent = userName;
+        userItem.appendChild(avatarImg);
+        userItem.appendChild(userNameSpan);
+        // Add click event listener
+        userItem.addEventListener('click', () => {
+            if (selectedUsers.has(user)) {
+                selectedUsers.delete(user);
+                userItem.classList.remove('selected-user');
+            } else {
+                selectedUsers.add(user);
+                userItem.classList.add('selected-user');
+            }
+            // Reload messages with filtering
+            loadMessagesAndUsers();
+        });
+        userList.appendChild(userItem);
     }
 }
 
