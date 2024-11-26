@@ -14,6 +14,9 @@ let addressNameMap = {};
 let avatarCache = {};
 // To keep track of selected users
 let selectedUsers = new Set();
+// Declare a global variable to store the attached file
+let attachedFile = null;
+document.getElementById('attach-button').disabled = true;
 
 // Initialize the application
 async function init() {
@@ -38,6 +41,21 @@ async function init() {
         } else {
             sidebar.classList.add('show');
         }
+    });
+    // Add event listener for the "Attach" button
+    document.getElementById('attach-button').addEventListener('click', function() {
+        // Create a hidden file input if it doesn't exist
+        let fileInput = document.getElementById('file-input');
+        if (!fileInput) {
+            fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.id = 'file-input';
+            fileInput.style.display = 'none';
+            fileInput.addEventListener('change', handleFileSelect);
+            document.body.appendChild(fileInput);
+        }
+        fileInput.value = null; // Reset the file input
+        fileInput.click();
     });
     // Load messages and users
     await loadMessagesAndUsers();
@@ -312,6 +330,7 @@ async function login() {
         isLoggedIn = false;
         // Update login button text
         document.getElementById('login-button').textContent = 'Login';
+        document.getElementById('attach-button').disabled = true;
         displayLogMessage('Logged out.');
     } else {
         // Login
@@ -327,6 +346,7 @@ async function login() {
             userName = await getNameForAddress(userAddress);
             // Update login button text
             document.getElementById('login-button').textContent = 'Logout';
+            document.getElementById('attach-button').disabled = false;
             // Display logging message: Login successful
             displayLogMessage(`Logged in as ${userName}.`);
         } catch (error) {
@@ -383,8 +403,9 @@ function fetchAvatarForName(name) {
 // Send a message to groupId 0
 function sendMessage() {
     const messageInput = document.getElementById('message-input');
-    const message = messageInput.value.trim();
-    if (message === '') return;
+    let message = messageInput.value.trim();
+    // If no message text and no attached file, do nothing
+    if (message === '' && !attachedFile) return;
     // Stop the periodic refresh
     clearInterval(refreshIntervalId);
     // Disable the send button and message input
@@ -404,47 +425,137 @@ function sendMessage() {
     }
     // Display logging message: Sending message
     displayLogMessage('Sending message...');
-    // Send group message to groupId 0
-    qortalRequest({
-        action: "SEND_CHAT_MESSAGE",
-        groupId: "0", // send to groupId 0
-        message: message
-    }).then(response => {
-        // If the response is not an error, treat it as success
-        if (response && !response.error) {
-            // Clear the input field upon successful send
-            messageInput.value = '';
-            // Display logging message: Message sent
-            displayLogMessage('Message sent successfully.');
-            // Log the response for further investigation
-            console.log('Response from SEND_CHAT_MESSAGE:', response);
-            displayLogMessage(`Response: ${JSON.stringify(response)}`);
-            // Reload messages and users
-            loadMessagesAndUsers();
+    // Function to actually send the message after handling the file (if any)
+    async function proceedToSendMessage() {
+        // Send group message to groupId 0
+        try {
+            const response = await qortalRequest({
+                action: "SEND_CHAT_MESSAGE",
+                groupId: "0", // send to groupId 0
+                message: message
+            });
+            if (response && !response.error) {
+                // Clear the input field upon successful send
+                messageInput.value = '';
+                // Display logging message: Message sent
+                displayLogMessage('Message sent successfully.');
+                // Log the response for further investigation
+                console.log('Response from SEND_CHAT_MESSAGE:', response);
+                displayLogMessage(`Response: ${JSON.stringify(response)}`);
+                // Reload messages and users
+                loadMessagesAndUsers();
+            } else {
+                // Handle unexpected response
+                console.error('Unexpected response from SEND_CHAT_MESSAGE:', response);
+                displayLogMessage(`Unexpected response: ${JSON.stringify(response)}`);
+                alert('Error sending message: Unexpected response from server.');
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            displayLogMessage(`Error sending message: ${error}`);
+            alert('Error sending message. Please try again.');
+        } finally {
+            // Re-enable the send button and message input
+            document.getElementById('send-button').disabled = false;
+            messageInput.disabled = false;
+            // Restore the opacity
+            document.getElementById('chat-input').style.opacity = '1';
+            // Remove the "Sending..." note
+            let sendingNote = document.getElementById('sending-note');
+            if (sendingNote) {
+                sendingNote.remove();
+            }
+            // Clear the attached file and filename display
+            attachedFile = null;
+            document.getElementById('selected-file-name').textContent = '';
+            // Restart the periodic refresh
+            refreshIntervalId = setInterval(loadMessagesAndUsers, 15000);
+        }
+    }
+    // Check if there is an attached file
+    if (attachedFile) {
+        // Determine the service type based on the file type
+        let serviceType = '';
+        const fileType = attachedFile.type;
+        if (fileType.startsWith('image/')) {
+            serviceType = 'QCHAT_IMAGE';
+        } else if (fileType.startsWith('audio/')) {
+            serviceType = 'QCHAT_AUDIO';
+        } else if (fileType.startsWith('video/')) {
+            serviceType = 'VIDEO';
+        } else if (fileType === 'text/plain' || fileType === '') {
+            serviceType = 'DOCUMENT';
         } else {
-            // Handle unexpected response
-            console.error('Unexpected response from SEND_CHAT_MESSAGE:', response);
-            displayLogMessage(`Unexpected response: ${JSON.stringify(response)}`);
-            alert('Error sending message: Unexpected response from server.');
+            alert('Unsupported file type.');
+            // Re-enable the send button and message input
+            document.getElementById('send-button').disabled = false;
+            messageInput.disabled = false;
+            // Restore the opacity
+            document.getElementById('chat-input').style.opacity = '1';
+            // Remove the "Sending..." note
+            let sendingNote = document.getElementById('sending-note');
+            if (sendingNote) {
+                sendingNote.remove();
+            }
+            return;
         }
-    }).catch(error => {
-        console.error('Error sending message:', error);
-        displayLogMessage(`Error sending message: ${error}`);
-        alert('Error sending message. Please try again.');
-    }).finally(() => {
-        // Re-enable the send button and message input
-        document.getElementById('send-button').disabled = false;
-        messageInput.disabled = false;
-        // Restore the opacity
-        document.getElementById('chat-input').style.opacity = '1';
-        // Remove the "Sending..." note
-        let sendingNote = document.getElementById('sending-note');
-        if (sendingNote) {
-            sendingNote.remove();
-        }
-        // Restart the periodic refresh
-        refreshIntervalId = setInterval(loadMessagesAndUsers, 15000);
-    });
+        // Generate a random 6-character identifier
+        const identifierSuffix = generateRandomString(6);
+        // Construct the identifier
+        const identifier = `qchat_group_0_${identifierSuffix}`;
+        // Prepare the publish request
+        const publishRequest = {
+            action: "PUBLISH_QDN_RESOURCE",
+            name: userName,
+            service: serviceType,
+            identifier: identifier,
+            file: attachedFile,
+            filename: attachedFile.name
+        };
+        // Publish the file
+        qortalRequest(publishRequest).then(response => {
+            if (response && !response.error) {
+                // Construct the qortal link
+                const qortalLink = `qortal://${serviceType}/${userName}/${identifier}`;
+                // Prepend the qortal link and a line break to the message
+                message = `${qortalLink}\n${message}`;
+                // Proceed to send the message
+                messageInput.value = message;
+                proceedToSendMessage();
+            } else {
+                console.error('Error publishing file:', response);
+                displayLogMessage(`Error publishing file: ${JSON.stringify(response)}`);
+                alert('Error publishing file. Please try again.');
+                // Re-enable the send button and message input
+                document.getElementById('send-button').disabled = false;
+                messageInput.disabled = false;
+                // Restore the opacity
+                document.getElementById('chat-input').style.opacity = '1';
+                // Remove the "Sending..." note
+                let sendingNote = document.getElementById('sending-note');
+                if (sendingNote) {
+                    sendingNote.remove();
+                }
+            }
+        }).catch(error => {
+            console.error('Error publishing file:', error);
+            displayLogMessage(`Error publishing file: ${error}`);
+            alert('Error publishing file. Please try again.');
+            // Re-enable the send button and message input
+            document.getElementById('send-button').disabled = false;
+            messageInput.disabled = false;
+            // Restore the opacity
+            document.getElementById('chat-input').style.opacity = '1';
+            // Remove the "Sending..." note
+            let sendingNote = document.getElementById('sending-note');
+            if (sendingNote) {
+                sendingNote.remove();
+            }
+        });
+    } else {
+        // No attached file, proceed to send the message
+        proceedToSendMessage();
+    }
 }
 
 function extractTextFromMessage(node) {
@@ -532,6 +643,8 @@ function processQortalLinks(text) {
                 return `<video controls src="${url}"></video>`;
             } else if (['AUDIO', 'QCHAT_AUDIO', 'VOICE'].includes(service)) {
                 return `<audio controls src="${url}"></audio>`;
+            } else if (['BLOG', 'BLOG_POST', 'BLOG_COMMENT', 'DOCUMENT'].includes(service)) {
+                return `<embed type="text/html" src="${url}"></embed>`;
             } else {
                 return `<a href="#" onclick="openQortalLink('${encodedLink}'); return false;">${displayText}</a>`;
             }
@@ -618,6 +731,30 @@ function hexToUint8Array(hexString) {
         byteArray[i] = parseInt(hexString.substr(i * 2, 2), 16);
     }
     return byteArray;
+}
+
+// Define the handleFileSelect function to handle file selection
+function handleFileSelect(event) {
+    attachedFile = event.target.files[0];
+    if (attachedFile) {
+        document.getElementById('selected-file-name').textContent = `Attached: ${attachedFile.name}`;
+    } else {
+        document.getElementById('selected-file-name').textContent = '';
+    }
+}
+
+// Utility function to generate a random 6-character string
+function generateRandomString(length) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    const charactersLength = characters.length;
+    const cryptoObj = window.crypto || window.msCrypto; // For IE 11
+    const randomValues = new Uint32Array(length);
+    cryptoObj.getRandomValues(randomValues);
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(randomValues[i] % charactersLength);
+    }
+    return result;
 }
 
 // Start the application
