@@ -117,7 +117,7 @@ async function loadMessagesAndUsers() {
             txGroupId: 0
         });
         groupMessages = messages;
-        // Build message map to handle edits
+        // Build message map to handle edits and replies
         let messageMap = {};
         for (let msg of groupMessages) {
             let messageId = msg.chatReference || msg.signature;
@@ -145,6 +145,8 @@ async function loadMessagesAndUsers() {
             const messageElement = document.createElement('div');
             messageElement.classList.add('message-item');
             const senderName = await getNameForAddress(msg.sender);
+            // Assign a unique ID to each message element
+            messageElement.id = 'msg-' + msg.signature;
             // Highlight messages from the logged-in user
             if (isLoggedIn && msg.sender === userAddress) {
                 messageElement.classList.add('highlighted-message');
@@ -166,8 +168,53 @@ async function loadMessagesAndUsers() {
                     const messageObject = JSON.parse(jsonString);
                     // Extract text from messageText
                     messageText = extractTextFromMessage(messageObject.messageText);
+                    // **Handle replies**
+                    if (messageObject.repliedTo) {
+                        const repliedToSignature = messageObject.repliedTo;
+                        const repliedToMsg = messageMap[repliedToSignature];
+                        if (repliedToMsg) {
+                            let repliedToText = '';
+                            if (repliedToMsg.isEncrypted) {
+                                repliedToText = '[Encrypted Message]';
+                            } else {
+                                try {
+                                    const decodedRepliedBytes = base58Decode(repliedToMsg.data);
+                                    const repliedJsonString = new TextDecoder().decode(decodedRepliedBytes);
+                                    const repliedMessageObject = JSON.parse(repliedJsonString);
+                                    repliedToText = extractTextFromMessage(repliedMessageObject.messageText);
+                                } catch (e) {
+                                    repliedToText = '[Unable to decode replied message]';
+                                }
+                            }
+                            // Create a div for the replied-to message
+                            const repliedToElement = document.createElement('div');
+                            repliedToElement.classList.add('replied-to-message');
+                            repliedToElement.innerHTML = `<strong>${await getNameForAddress(repliedToMsg.sender)}</strong>: ${repliedToText}`;
+                            /* // Make it clickable
+                            repliedToElement.style.cursor = 'pointer';
+                            repliedToElement.addEventListener('click', () => {
+                                const originalMessageElement = document.getElementById('msg-' + repliedToSignature);
+                                if (originalMessageElement) {
+                                    originalMessageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    // Optionally highlight the original message temporarily
+                                    originalMessageElement.classList.add('highlighted');
+                                    setTimeout(() => {
+                                        originalMessageElement.classList.remove('highlighted');
+                                    }, 2000);
+                                }
+                            }); */
+                            // Add the replied-to message above the current message content
+                            messageContent.insertBefore(repliedToElement, messageContent.firstChild);
+                        } else {
+                            const repliedToElement = document.createElement('div');
+                            repliedToElement.classList.add('replied-to-message');
+                            repliedToElement.textContent = '[Original message not found]';
+                            messageContent.insertBefore(repliedToElement, messageContent.firstChild);
+                        }
+                    }
+        
                     // Handle embedded images
-                    if (messageObject.images && Array.isArray(messageObject.images) && (messageObject.images[0] !== "")) {
+                    if (messageObject.images && Array.isArray(messageObject.images) && messageObject.images[0] !== "") {
                         for (let image of messageObject.images) {
                             const imageUrl = `/arbitrary/${image.service}/${image.name}/${image.identifier}`;
                             messageText += `<br><img src="${imageUrl}" alt="Embedded Image">`;
@@ -179,7 +226,7 @@ async function loadMessagesAndUsers() {
                     messageText = '[Unable to decode message]';
                 }
             }
-            messageContent.innerHTML = `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formatTimestamp(msg.timestamp)}</span><br>${messageText}`;
+            messageContent.innerHTML += `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formatTimestamp(msg.timestamp)}</span><br>${messageText}`;
             // Append avatar and content to message element
             messageElement.appendChild(avatarImg);
             messageElement.appendChild(messageContent);
