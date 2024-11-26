@@ -19,7 +19,7 @@ let attachedFile = null;
 // Mapping of displayed messages
 let displayedMessages = {};
 
-document.getElementById('attach-button').disabled = true;
+document.getElementById('attach-button').style.display = 'none';
 
 // Initialize the application
 async function init() {
@@ -355,7 +355,7 @@ async function login() {
         isLoggedIn = false;
         // Update login button text
         document.getElementById('login-button').textContent = 'Login';
-        document.getElementById('attach-button').disabled = true;
+        document.getElementById('attach-button').style.display = 'none';
         displayLogMessage('Logged out.');
     } else {
         // Login
@@ -371,7 +371,7 @@ async function login() {
             userName = await getNameForAddress(userAddress);
             // Update login button text
             document.getElementById('login-button').textContent = 'Logout';
-            document.getElementById('attach-button').disabled = false;
+            document.getElementById('attach-button').style.display = 'block';
             // Display logging message: Login successful
             displayLogMessage(`Logged in as ${userName}.`);
         } catch (error) {
