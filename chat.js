@@ -16,6 +16,9 @@ let avatarCache = {};
 let selectedUsers = new Set();
 // Declare a global variable to store the attached file
 let attachedFile = null;
+// Mapping of displayed messages
+let displayedMessages = {};
+
 document.getElementById('attach-button').disabled = true;
 
 // Initialize the application
@@ -60,7 +63,9 @@ async function init() {
     // Load messages and users
     await loadMessagesAndUsers();
     // Periodically refresh messages and users
-    refreshIntervalId = setInterval(loadMessagesAndUsers, 15000); // Refresh every 15 seconds
+    refreshIntervalId = setInterval(() => {
+        loadMessagesAndUsers().catch(error => console.error(error)); // Refresh every 15 seconds
+    }, 15000);
 }
 
 // Base58 encoding and decoding functions
@@ -157,100 +162,40 @@ async function loadMessagesAndUsers() {
         if (selectedUsers.size > 0) {
             messagesToDisplay = messagesToDisplay.filter(msg => selectedUsers.has(msg.sender));
         }
-        // Display messages
-        chatMessages.innerHTML = '';
-        for (let msg of messagesToDisplay) {
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('message-item');
-            const senderName = await getNameForAddress(msg.sender);
-            // Assign a unique ID to each message element
-            messageElement.id = 'msg-' + msg.signature;
-            // Highlight messages from the logged-in user
-            if (isLoggedIn && msg.sender === userAddress) {
-                messageElement.classList.add('highlighted-message');
+        // Build a set of current message signatures
+        let currentMessageSignatures = new Set(messagesToDisplay.map(msg => msg.signature));
+        // Remove messages that are no longer in messagesToDisplay
+        for (let signature in displayedMessages) {
+            if (!currentMessageSignatures.has(signature)) {
+                // Remove from DOM
+                let messageElement = displayedMessages[signature];
+                if (messageElement && messageElement.parentNode) {
+                    messageElement.parentNode.removeChild(messageElement);
+                }
+                // Remove from displayedMessages
+                delete displayedMessages[signature];
             }
-            // Create avatar image
-            const avatarImg = document.createElement('img');
-            const name = addressNameMap[msg.sender] || msg.sender;
-            avatarImg.src = avatarCache[name] || 'default-avatar.png';
-            // Create message content
-            const messageContent = document.createElement('div');
-            messageContent.classList.add('message-content');
-            let messageText = '';
-            if (msg.isEncrypted) {
-                messageText = '[Encrypted Message]';
+        }
+        // For each message in messagesToDisplay
+        for (let msg of messagesToDisplay) {
+            const messageId = msg.signature;
+            const existingMessageElement = displayedMessages[messageId];
+            if (!existingMessageElement) {
+                // Message not displayed yet, create and append it
+                const messageElement = await createMessageElement(msg, messageMap);
+                chatMessages.appendChild(messageElement);
+                displayedMessages[messageId] = messageElement;
             } else {
-                try {
-                    const decodedBytes = base58Decode(msg.data);
-                    const jsonString = new TextDecoder().decode(decodedBytes);
-                    const messageObject = JSON.parse(jsonString);
-                    // Extract text from messageText
-                    messageText = extractTextFromMessage(messageObject.messageText);
-                    // **Handle replies**
-                    if (messageObject.repliedTo) {
-                        const repliedToSignature = messageObject.repliedTo;
-                        const repliedToMsg = messageMap[repliedToSignature];
-                        if (repliedToMsg) {
-                            let repliedToText = '';
-                            if (repliedToMsg.isEncrypted) {
-                                repliedToText = '[Encrypted Message]';
-                            } else {
-                                try {
-                                    const decodedRepliedBytes = base58Decode(repliedToMsg.data);
-                                    const repliedJsonString = new TextDecoder().decode(decodedRepliedBytes);
-                                    const repliedMessageObject = JSON.parse(repliedJsonString);
-                                    repliedToText = extractTextFromMessage(repliedMessageObject.messageText);
-                                } catch (e) {
-                                    repliedToText = '[Unable to decode replied message]';
-                                }
-                            }
-                            // Create a div for the replied-to message
-                            const repliedToElement = document.createElement('div');
-                            repliedToElement.classList.add('replied-to-message');
-                            repliedToElement.innerHTML = `<strong>${await getNameForAddress(repliedToMsg.sender)}</strong>: ${repliedToText}`;
-                            /* // Make it clickable
-                            repliedToElement.style.cursor = 'pointer';
-                            repliedToElement.addEventListener('click', () => {
-                                const originalMessageElement = document.getElementById('msg-' + repliedToSignature);
-                                if (originalMessageElement) {
-                                    originalMessageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                    // Optionally highlight the original message temporarily
-                                    originalMessageElement.classList.add('highlighted');
-                                    setTimeout(() => {
-                                        originalMessageElement.classList.remove('highlighted');
-                                    }, 2000);
-                                }
-                            }); */
-                            // Add the replied-to message above the current message content
-                            messageContent.insertBefore(repliedToElement, messageContent.firstChild);
-                        } else {
-                            const repliedToElement = document.createElement('div');
-                            repliedToElement.classList.add('replied-to-message');
-                            repliedToElement.textContent = '[Original message not found]';
-                            messageContent.insertBefore(repliedToElement, messageContent.firstChild);
-                        }
-                    }
-        
-                    // Handle embedded images
-                    if (messageObject.images && Array.isArray(messageObject.images) && messageObject.images[0] !== "") {
-                        for (let image of messageObject.images) {
-                            const imageUrl = `/arbitrary/${image.service}/${image.name}/${image.identifier}`;
-                            messageText += `<br><img src="${imageUrl}" alt="Embedded Image">`;
-                        }
-                    }
-                    // Process qortal:// links within the message text
-                    messageText = processQortalLinks(messageText);
-                } catch (e) {
-                    messageText = '[Unable to decode message]';
+                // Message already displayed, check if it needs to be updated
+                if (msg.timestamp > existingMessageElement.dataset.timestamp) {
+                    // Update message content
+                    const newMessageElement = await createMessageElement(msg, messageMap);
+                    chatMessages.replaceChild(newMessageElement, existingMessageElement);
+                    displayedMessages[messageId] = newMessageElement;
                 }
             }
-            messageContent.innerHTML += `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formatTimestamp(msg.timestamp)}</span><br>${messageText}`;
-            // Append avatar and content to message element
-            messageElement.appendChild(avatarImg);
-            messageElement.appendChild(messageContent);
-            chatMessages.appendChild(messageElement);
         }
-        // Scroll to the bottom if the user was at the bottom
+        // If the user was at the bottom, scroll to the bottom
         if (isAtBottom) {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -260,6 +205,86 @@ async function loadMessagesAndUsers() {
         console.error('Error loading messages and users:', error);
         displayLogMessage(`Error loading messages and users: ${error}`);
     }
+}
+
+async function createMessageElement(msg, messageMap) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message-item');
+    const senderName = await getNameForAddress(msg.sender);
+    // Assign a unique ID to each message element
+    messageElement.id = 'msg-' + msg.signature;
+    // Store the timestamp as a data attribute
+    messageElement.dataset.timestamp = msg.timestamp;
+    // Highlight messages from the logged-in user
+    if (isLoggedIn && msg.sender === userAddress) {
+        messageElement.classList.add('highlighted-message');
+    }
+    // Create avatar image
+    const avatarImg = document.createElement('img');
+    const name = addressNameMap[msg.sender] || msg.sender;
+    avatarImg.src = avatarCache[name] || 'default-avatar.png';
+    // Create message content
+    const messageContent = document.createElement('div');
+    messageContent.classList.add('message-content');
+    let messageText = '';
+    if (msg.isEncrypted) {
+        messageText = '[Encrypted Message]';
+    } else {
+        try {
+            const decodedBytes = base58Decode(msg.data);
+            const jsonString = new TextDecoder().decode(decodedBytes);
+            const messageObject = JSON.parse(jsonString);
+            // Extract text from messageText
+            messageText = extractTextFromMessage(messageObject.messageText);
+            // Handle replies
+            if (messageObject.repliedTo) {
+                const repliedToSignature = messageObject.repliedTo;
+                const repliedToMsg = messageMap[repliedToSignature];
+                if (repliedToMsg) {
+                    let repliedToText = '';
+                    if (repliedToMsg.isEncrypted) {
+                        repliedToText = '[Encrypted Message]';
+                    } else {
+                        try {
+                            const decodedRepliedBytes = base58Decode(repliedToMsg.data);
+                            const repliedJsonString = new TextDecoder().decode(decodedRepliedBytes);
+                            const repliedMessageObject = JSON.parse(repliedJsonString);
+                            repliedToText = extractTextFromMessage(repliedMessageObject.messageText);
+                        } catch (e) {
+                            repliedToText = '[Unable to decode replied message]';
+                        }
+                    }
+                    // Create a div for the replied-to message
+                    const repliedToElement = document.createElement('div');
+                    repliedToElement.classList.add('replied-to-message');
+                    repliedToElement.innerHTML = `<strong>${await getNameForAddress(repliedToMsg.sender)}</strong>: ${repliedToText}`;
+                    // Add the replied-to message above the current message content
+                    messageContent.insertBefore(repliedToElement, messageContent.firstChild);
+                } else {
+                    const repliedToElement = document.createElement('div');
+                    repliedToElement.classList.add('replied-to-message');
+                    repliedToElement.textContent = '[Original message not found]';
+                    messageContent.insertBefore(repliedToElement, messageContent.firstChild);
+                }
+            }
+            // Handle embedded images
+            if (messageObject.images && Array.isArray(messageObject.images) && messageObject.images[0] !== "") {
+                for (let image of messageObject.images) {
+                    const imageUrl = `/arbitrary/${image.service}/${image.name}/${image.identifier}`;
+                    messageText += `<br><img src="${imageUrl}" alt="Embedded Image">`;
+                }
+            }
+            // Process qortal:// links within the message text
+            messageText = processQortalLinks(messageText);
+        } catch (e) {
+            messageText = '[Unable to decode message]';
+        }
+    }
+    messageContent.innerHTML += `<strong>${senderName}</strong> <span style="color: gray; font-size: 0.8em;">${formatTimestamp(msg.timestamp)}</span><br>${messageText}`;
+    // Append avatar and content to message element
+    messageElement.appendChild(avatarImg);
+    messageElement.appendChild(messageContent);
+    return messageElement;
 }
 
 function updateUserList(activeUsers) {
